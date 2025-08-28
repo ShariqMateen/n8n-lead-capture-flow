@@ -1,0 +1,228 @@
+{
+  "name": "Lead-Capture Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-capture",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "3509e3db-2640-4f2e-a870-6cbfbf2d4b76",
+      "name": "Webhook",
+      "webhookId": "351dfb39-0ae0-45a9-a3fb-8f910fc7387d"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ { \"name\": $json.body.name || \"\", \"email\": $json.body.email || \"\", \"phone\": $json.body.phone || \"\", \"message\": $json.body.message || \"\", \"timestamp\": new Date().toISOString()} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "5d60da18-4b76-43a2-a592-c66baa275f22",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a lead classifier. Given the input message JSON:{{ $json.message }} , perform the following tasks:\n\n1. Classify the message intent as one of: 'lead', 'support', or 'spam':\n   - 'lead': If the message contains sales-related keywords like 'pricing', 'buy', 'bulk', 'purchase', or expresses interest in products/services.\n   - 'support': If the message contains help-related keywords like 'help', 'issue', 'problem', 'support'.\n   - 'spam': If the message is irrelevant, promotional, or lacks context.\n2. Assign a score based on urgency/interest:\n   - 'hot': Urgent or strong sales intent (e.g., 'bulk pricing', 'buy now').\n   - 'warm': General interest but less urgent (e.g., 'interested in your product').\n   - 'cold': Low/no relevance (e.g., spam or vague messages).\n3. Output only JSON with the following structure:\n   {\n     \"name\":{{ $json.name }} ,\n     \"email\": \"{{ $json.email }}\",\n     \"phone\": \"{{ $json.phone }}\",\n     \"intent\": \"<lead/support/spam>\",\n     \"score\": \"<hot/warm/cold>\",\n     \"original_message\": original message,\n     \"timestamp\": \"<ISO timestamp, e.g., 2025-08-11 T13:15:52.739+05:00>\"\n   }\n\nEnsure the output is valid JSON.",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Act as a precise JSON formatter and classifier"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        432,
+        0
+      ],
+      "id": "817af9b3-93f7-4e38-bc13-8e02160687f1",
+      "name": "Basic LLM Chain",
+      "alwaysOutputData": true,
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        512,
+        176
+      ],
+      "id": "cdd7cda3-3eea-4f66-940d-557f7fc53f16",
+      "name": "OpenAI Chat Model",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get the text from OpenAI output\nlet raw = $json[\"text\"] || \"\";\n\n// Remove triple backticks and possible \"json\" hint\nraw = raw.replace(/```json|```/g, \"\").trim();\n\n// Try parsing JSON\nlet data;\ntry {\n  data = JSON.parse(raw);\n} catch (e) {\n  data = {};\n}\n\n// Return parsed fields\nreturn { json: data };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        0
+      ],
+      "id": "8628c587-00d5-4745-90fe-4e7e80d954d9",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d0d0952f-f478-4124-aaec-55a062904f73",
+              "leftValue": "={{$json[\"intent\"]}}",
+              "rightValue": "spam",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        0
+      ],
+      "id": "81b4f4f3-e5df-415f-9db9-9ecfc3b4a050",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "fromEmail": "example@domain.com",
+        "toEmail": "example@domain.com",
+        "subject": "=New {{$json[\"intent\"]}} \u2014 {{$json[\"name\"] || \"Unknown\"}} [{{$json[\"score\"]}}]",
+        "emailFormat": "text",
+        "text": "=Name: {{$json[\"name\"]}}\nEmail: {{$json[\"email\"]}}\nPhone: {{$json[\"phone\"]}}\nIntent: {{$json[\"intent\"]}}\nScore: {{$json[\"score\"]}}\nMessage: {{$json[\"original_message\"]}}\nTimestamp: {{$json[\"timestamp\"]}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1200,
+        80
+      ],
+      "id": "5ddfc54f-e35b-4ed5-b7db-40ea8881e5b2",
+      "name": "Send email1",
+      "webhookId": "3f0ba2f5-bcb2-4eed-aa90-fa2ddff5c5a2",
+      "credentials": {}
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "070ba356-f4ba-412b-bfe7-987a99620f24",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7d6a60c90132a007a1cd1cd52ccb452f84400c2d0afac3ecf1df8817337a3be7"
+  },
+  "id": "OufZQn3tLEBvQ6OG",
+  "tags": []
+}
